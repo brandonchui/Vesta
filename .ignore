@@ -1,0 +1,15 @@
+
+/thirdparty/
+.cache
+run.bat
+.ignore
+.idea
+.vs
+build
+cmake-build-debug
+out
+.CMakeSettings.json
+.gitignore
+.clang-format
+.clang-tidy
+.clangd

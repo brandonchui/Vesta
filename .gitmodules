@@ -1,0 +1,12 @@
+[submodule "thirdparty/D3D12MemoryAllocator"]
+	path = thirdparty/D3D12MemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator.git
+[submodule "thirdparty/DirectXTK12"]
+	path = thirdparty/DirectXTK12
+	url = https://github.com/microsoft/DirectXTK12.git
+[submodule "thirdparty/spdlog"]
+	path = thirdparty/spdlog
+	url = https://github.com/gabime/spdlog.git
+[submodule "thirdparty/imgui"]
+	path = thirdparty/imgui
+	url = https://github.com/ocornut/imgui.git

@@ -1,0 +1,8 @@
+.cache
+.idea
+.vs
+cmake-build-debug
+out
+CMakeSettings.json
+.clang-format
+build

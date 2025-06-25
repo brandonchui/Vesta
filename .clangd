@@ -1,0 +1,8 @@
+# This tells clangd how to interpret compile commands for this project.
+CompileFlags:
+  # This is the magic part. It tells clangd:
+  # "When you see a command for cl.exe from compile_commands.json,
+  #  run clang-cl.exe instead to get the full list of system includes."
+  # This works because clang-cl knows how to report all the hidden include
+  # paths that cl.exe uses.
+  Compiler: clang-cl
