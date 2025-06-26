@@ -21,6 +21,7 @@ add_library(Engine SHARED
     "src/Common/Util/CameraController.cpp"
     "src/Common/Util/Logger.h"
     "src/Common/Resource/Resource.cpp"
+    "${THIRDPARTY_DIR}/D3D12MemoryAllocator/src/D3D12MemAlloc.cpp"
 )
 
 target_compile_definitions(Engine PRIVATE RHI_BUILD_DLL -DUNICODE -D_UNICODE)

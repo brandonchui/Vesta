@@ -6,6 +6,7 @@
 #include <D3D12MemAlloc.h>
 #include <d3d12.h>
 #include <dxgi1_6.h>
+#include <wrl.h>
 #endif
 
 #ifdef __cplusplus
@@ -213,6 +214,9 @@ typedef struct RendererDesc {
 ALIGNED_STRUCT(Renderer, ALIGN_Renderer) {
 #if defined(D3D12)
     struct {
+        // using ThirdParty/D3D12MemoryAllocator
+        Microsoft::WRL::ComPtr<D3D12MA::Allocator> Allocator;
+
         struct DescriptorHeap** pCPUDescriptorHeaps;
         struct DescriptorHeap** pCbvSrvUavHeaps;
         struct DescriptorHeap** pSamplerHeaps;

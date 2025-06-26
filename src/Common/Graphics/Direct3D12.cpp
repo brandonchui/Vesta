@@ -1,14 +1,14 @@
 #include "../Config.h"
 #include "../IGraphics.h"
 
-#include <d3d12sdklayers.h>
 #include <stdio.h>
 #include <windows.h>
 #include <wrl/client.h>
 #include <cassert>
 
 using Microsoft::WRL::ComPtr;
-#pragma comment(lib, "d3dcompiler.lib")
+
+#pragma comment(lib, "dxcompiler.lib")
 #pragma comment(lib, "D3D12.lib")
 #pragma comment(lib, "dxgi.lib")
 
@@ -111,6 +111,15 @@ static bool AddDevice(const RendererDesc* pDesc, Renderer* pRenderer) {
     }
     pRenderer->mDx.pDevice->SetName(L"Main Device");
 
+    D3D12MA::ALLOCATOR_DESC allocatorDesc = {};
+    allocatorDesc.pDevice = pRenderer->mDx.pDevice;
+    allocatorDesc.pAdapter = pRenderer->pGpuDesc->mDx.pAdapter;
+
+    HRESULT allocatorHr = D3D12MA::CreateAllocator(&allocatorDesc, &pRenderer->mDx.Allocator);
+    if (FAILED(allocatorHr)) {
+        return false;
+    }
+
 #if defined(ENABLE_DEBUG)
     if (SUCCEEDED(pRenderer->mDx.pDevice->QueryInterface(
             IID_PPV_ARGS(&pRenderer->mDx.pDebugValidation)))) {
@@ -123,6 +132,10 @@ static bool AddDevice(const RendererDesc* pDesc, Renderer* pRenderer) {
 }
 
 static void RemoveDevice(Renderer* pRenderer) {
+    if (pRenderer->mDx.Allocator) {
+        pRenderer->mDx.Allocator->Release();
+        pRenderer->mDx.Allocator = nullptr;
+    }
 #if defined(ENABLE_DEBUG)
     if (pRenderer->mDx.pDebugValidation) {
         SafeRelease(pRenderer->mDx.pDebugValidation);
