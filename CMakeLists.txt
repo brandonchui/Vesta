@@ -21,10 +21,14 @@ add_library(Engine SHARED
     "src/Common/Util/CameraController.cpp"
     "src/Common/Util/Logger.h"
     "src/Common/Resource/Resource.cpp"
+    "src/VTMath.cpp"
     "${THIRDPARTY_DIR}/D3D12MemoryAllocator/src/D3D12MemAlloc.cpp"
 )
 
 target_compile_definitions(Engine PRIVATE RHI_BUILD_DLL -DUNICODE -D_UNICODE)
+if (MSVC OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC"))
+    target_compile_definitions(Engine PRIVATE _CRT_DECLARE_NONSTDC_NAMES=1 _USE_MATH_DEFINES)
+endif()
 
 
 target_include_directories(Engine PUBLIC
@@ -38,8 +42,11 @@ target_include_directories(Engine PUBLIC
 target_compile_options(Engine PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 
 
-# Builds all the examples
+# Builds all the examples and copies shaders
 file(GLOB EXAMPLE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src/Examples/*")
+
+set(SHADER_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/Shaders")
+
 
 foreach(EXAMPLE_PATH ${EXAMPLE_DIRS})
     if(IS_DIRECTORY ${EXAMPLE_PATH})
@@ -54,5 +61,14 @@ foreach(EXAMPLE_PATH ${EXAMPLE_DIRS})
         target_compile_options(${EXAMPLE_NAME} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 
         set_target_properties(${EXAMPLE_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+        add_custom_command(
+            TARGET ${EXAMPLE_NAME}
+            POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "${SHADER_SRC_DIR}"
+                    "$<TARGET_FILE_DIR:${EXAMPLE_NAME}>/Shaders"
+            COMMENT "Copying shaders for ${EXAMPLE_NAME}"
+        )
     endif()
 endforeach()

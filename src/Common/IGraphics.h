@@ -14,8 +14,47 @@ extern "C" {
 #endif
 
 // Enums and Structs
+//
+
+#if defined(D3D12)
+typedef uint64_t DxDescriptorID;
+#endif
+
+typedef enum TextureCreationFlags {
+    TEXTURE_CREATION_FLAG_NONE = 0,
+    TEXTURE_CREATION_FLAG_OWN_MEMORY_BIT = 0x01,
+} TextureCreationFlags;
+
+typedef enum ResourceState {
+    RESOURCE_STATE_UNDEFINED = 0,
+    RESOURCE_STATE_RENDER_TARGET = 1 << 0,
+    RESOURCE_STATE_PRESENT = 1 << 1,
+    RESOURCE_STATE_SHADER_RESOURCE = 1 << 2,
+    RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER = 1 << 3,
+    RESOURCE_STATE_GENERIC_READ = 1 << 4,
+    RESOURCE_STATE_DEPTH_WRITE = 1 << 8,
+} ResourceState;
+
+typedef enum DescriptorType {
+    DESCRIPTOR_TYPE_UNDEFINED = 0,
+    DESCRIPTOR_TYPE_SAMPLER = 0x01,
+    DESCRIPTOR_TYPE_TEXTURE = 0x02,
+    DESCRIPTOR_TYPE_UNIFORM_BUFFER = 0x04,
+    DESCRIPTOR_TYPE_VERTEX_BUFFER = 0x08,
+} DescriptorType;
+
+typedef enum ResourceMemoryUsage {
+    RESOURCE_MEMORY_USAGE_GPU_ONLY,
+    RESOURCE_MEMORY_USAGE_CPU_ONLY,
+    RESOURCE_MEMORY_USAGE_CPU_TO_GPU
+} ResourceMemoryUsage;
+
 typedef enum ImageFormat {
+    IMAGE_FORMAT_UNDEFINED = 0,
+    IMAGE_FORMAT_R32G32B32_FLOAT,
+    IMAGE_FORMAT_R32G32B32A32_FLOAT,
     IMAGE_FORMAT_R8G8B8A8_UNORM,
+    IMAGE_FORMAT_D32_FLOAT,
 } ImageFormat;
 
 typedef enum SampleCount {
@@ -26,8 +65,11 @@ typedef enum SampleCount {
 /// Shader
 typedef enum ShaderStage {
     SHADER_STAGE_NONE = 0,
-    SHADER_STAGE_VERT = 0x1,
-    SHADER_STAGE_FRAG = 0x2,
+    SHADER_STAGE_VERTEX = 0x1,
+    SHADER_STAGE_FRAGMENT = 0x2,
+    SHADER_STAGE_COMPUTE = 0x4,
+    SHADER_STAGE_ALL_GRAPHICS = SHADER_STAGE_VERTEX | SHADER_STAGE_FRAGMENT,
+    SHADER_STAGE_ALL = 0xFF,
 } ShaderStage;
 
 typedef struct Shader Shader;
@@ -36,34 +78,8 @@ struct Shader {
 #if defined(D3D12)
     struct {
         LPCWSTR* pEntryNames;
-        // TODO blob here?
-    } mDx;
-#endif
-};
-
-///////////////////////////////////////////////
-/// Descriptor Set
-#if defined(D3D12)
-typedef uint64_t DxDescriptorID;
-#endif
-
-typedef enum DescriptorType {
-    DESCRIPTOR_TYPE_UNDEFINED = 0,
-    DESCRIPTOR_TYPE_SAMPLER = 0x01,
-} DescriptorType;
-
-typedef struct Descriptor {
-    DescriptorType mType;
-    uint32_t mCount;
-    uint32_t mOffSet;
-} Descriptor;
-
-#define ALIGN_DescriptorSet 64
-ALIGNED_STRUCT(DescriptorSet, ALIGN_DescriptorSet) {
-#if defined(D3D12)
-    struct {
-        DxDescriptorID mCbvSrvUavHandle;
-        const struct Descriptor* pDescriptors;
+        ID3DBlob* pVertexShader;
+        ID3DBlob* pPixelShader;
     } mDx;
 #endif
 };
@@ -72,6 +88,11 @@ ALIGNED_STRUCT(DescriptorSet, ALIGN_DescriptorSet) {
 /// Render Target
 typedef struct ClearValue {
     float r, g, b, a;
+
+    struct {
+        float depth;
+        uint32_t stencil;
+    };
 } ClearValue;
 
 #define ALIGN_Texture 64
@@ -85,17 +106,43 @@ ALIGNED_STRUCT(Texture, ALIGN_Texture) {
 #endif
 };
 
+typedef struct RenderTargetDesc RenderTargetDesc;
+struct RenderTargetDesc {
+    uint32_t mWidth;
+    uint32_t mHeight;
+    uint32_t mDepth;
+    uint32_t mArraySize;
+
+    ResourceState mStartState;
+    ClearValue mClearValue;
+
+    DescriptorType mDescriptors;
+    const void* pNativeHandle;
+
+    uint32_t mSampleQuality;
+    uint32_t mSampleCount;
+
+    const char* pName;
+
+    TextureCreationFlags mFlags;
+
+    ImageFormat mFormat;
+};
+
 #define ALIGN_RenderTarget 64
 ALIGNED_STRUCT(RenderTarget, ALIGN_RenderTarget) {
     Texture* pTexture;
 #if defined(D3D12)
     struct {
         D3D12_CPU_DESCRIPTOR_HANDLE mDxRtvHandle;
+        D3D12_CPU_DESCRIPTOR_HANDLE mDxDsvHandle;
+        struct DescriptorHeap* pDsvHeap;
     } mDx;
 #endif
     ClearValue mClearValue;
     uint32_t mWidth;
     uint32_t mHeight;
+    ImageFormat mFormat;
 };
 
 typedef enum LoadActionType {
@@ -117,25 +164,20 @@ struct BindRenderTargetDesc {
     RenderTarget* pRenderTarget;
     LoadActionType mLoadAction;
     StoreActionType mStoreAction;
-    // Default to a gray
+    // Default to gray
     ClearValue mClearValue { 0.5f, 0.5f, 0.5f, 1.0f };
 };
 
 typedef struct BindRenderTargetsDesc BindRenderTargetsDesc;
 struct BindRenderTargetsDesc {
     uint32_t mRenderTargetCount;
+    BindRenderTargetDesc mDepthStencil;
     // TODO max render target attachments in array?
     BindRenderTargetDesc mRenderTarget[1];
 };
 
 ///////////////////////////////
 /// Resource Barrier
-typedef enum ResourceState {
-    RESOURCE_STATE_UNDEFINED = 0,
-    RESOURCE_STATE_RENDER_TARGET = 1 << 0,
-    RESOURCE_STATE_PRESENT = 1 << 1,
-    RESOURCE_STATE_SHADER_RESOURCE = 1 << 2,
-} ResourceState;
 
 typedef struct RenderTargetBarrier {
     RenderTarget* pRenderTarget;
@@ -215,6 +257,7 @@ ALIGNED_STRUCT(Renderer, ALIGN_Renderer) {
 #if defined(D3D12)
     struct {
         // using ThirdParty/D3D12MemoryAllocator
+        // TODO convert to C
         Microsoft::WRL::ComPtr<D3D12MA::Allocator> Allocator;
 
         struct DescriptorHeap** pCPUDescriptorHeaps;
@@ -333,6 +376,7 @@ ALIGNED_STRUCT(Pipeline, ALIGN_Pipeline) {
 #if defined(D3D12)
     struct {
         ID3D12PipelineState* pPipelineState;
+        ID3D12RootSignature* pRootSignature;
         PipelineType mType;
         D3D_PRIMITIVE_TOPOLOGY mPrimitiveTopology;
     } mDx;
@@ -360,6 +404,9 @@ struct QueuePresentDesc {
 /// Buffer
 #define ALIGN_Buffer 64
 ALIGNED_STRUCT(Buffer, ALIGN_Buffer) {
+    // NOTE might move this later but good enough for now
+    void* pCpuMappedAddress;
+
 #if defined(D3D12)
     struct {
         D3D12_GPU_VIRTUAL_ADDRESS mGpuAddress;
@@ -367,10 +414,10 @@ ALIGNED_STRUCT(Buffer, ALIGN_Buffer) {
         uint8_t mSrvDescriptorOffset;
         uint8_t mUavDescriptorOffset;
 
-        // Resource handle
         ID3D12Resource* pResource;
-        uint8_t mMarkerBuffer;
 
+        // TODO
+        uint8_t mMarkerBuffer;
         union {
             ID3D12Heap* pMarkerBufferHeap;
         };
@@ -378,11 +425,15 @@ ALIGNED_STRUCT(Buffer, ALIGN_Buffer) {
 #endif
 
     uint64_t mSize;
+    uint64_t mStructStride;
     uint64_t mDescriptors;
+    ResourceMemoryUsage mMemoryUsage;
+    uint32_t mFlags;
 };
 
 typedef enum BufferCreationFlags {
     BUFFER_CREATION_FLAG_NONE = 0x0,
+    BUFFER_CREATIONFLAG_PERSISTENT = 0x1,
 } BufferCreationFlags;
 
 typedef struct BufferDesc BufferDesc;
@@ -397,21 +448,231 @@ struct BufferDesc {
 
     uint32_t mAlignment;
 
-    // Debug purposes
     const char* pName;
 
     BufferCreationFlags mFlags;
 
     QueueType mQueueType;
-    /// What state will the buffer get created in
+
     ResourceState mStartState;
 
     DescriptorType mDescriptors;
+
+    ResourceMemoryUsage mMemoryUsage;
+};
+
+typedef struct BufferUpdateDesc BufferUpdateDesc;
+struct BufferUpdateDesc {
+    Buffer* pBuffer;
+
+    uint64_t mDstOffset;
+    uint64_t mSize;
+
+    void* pMappedData;
+
+    struct {
+        void* pStagingBuffer;
+        bool mNeedsUnmap; // dirty
+    } mInternal;
+};
+
+/////////////////////////////////////////
+// PIPELINE LAYOUT
+typedef enum ResourceType {
+    RESOURCE_TYPE_ROOT_CONSTANT_BUFFER,
+    RESOURCE_TYPE_DESCRIPTOR_TABLE,
+} ResourceType;
+
+typedef struct RootSignatureDesc RootSignatureDesc;
+struct RootSignatureDesc {
+    const char* pGraphicsFileName;
+    const char* pComputeFileName;
+};
+
+typedef struct DescriptorRangeDesc DescriptorRangeDesc;
+struct DescriptorRangeDesc {
+    uint32_t binding;
+    uint32_t count;
+    DescriptorType type;
+};
+
+typedef struct RootParameter RootParameter;
+struct RootParameter {
+    ResourceType type;
+    ShaderStage shaderVisibility;
+    union {
+        // For RESOURCE_TYPE_ROOT_CONSTANT_BUFFER
+        struct {
+            uint32_t binding;
+        } rootConstantBuffer;
+
+        // For RESOURCE_TYPE_DESCRIPTOR_TABLE
+        struct {
+            uint32_t rangeCount;
+            const DescriptorRangeDesc* pRanges;
+        } descriptorTable;
+    };
+};
+
+typedef struct PipelineLayout PipelineLayout;
+struct PipelineLayout {
+    void* pHandle;
+};
+
+typedef struct StaticSamplerDesc StaticSamplerDesc;
+struct StaticSamplerDesc {
+    uint32_t binding;
+    ShaderStage shaderVisibility;
+};
+
+typedef struct PipelineLayoutDesc PipelineLayoutDesc;
+struct PipelineLayoutDesc {
+    uint32_t parameterCount;
+    const RootParameter* pParameters;
+    uint32_t staticSamplerCount;
+    const StaticSamplerDesc* pStaticSamplers;
+    const char* pShaderFileName;
+};
+
+typedef struct VertexAttrib VertexAttrib;
+struct VertexAttrib {
+    const char* pSemanticName;
+
+    ImageFormat mFormat;
+
+    uint32_t mBinding;
+
+    uint32_t mOffset;
+
+    uint32_t mLocation;
+};
+
+typedef struct VertexLayout VertexLayout;
+struct VertexLayout {
+    uint32_t mAttribCount;
+    VertexAttrib* pAttribs;
+    uint32_t mStride;
+};
+
+typedef enum CullMode { CULL_MODE_NONE = 0, CULL_MODE_FRONT, CULL_MODE_BACK } CullMode;
+typedef enum FillMode { FILL_MODE_SOLID = 0, FILL_MODE_WIREFRAME } FillMode;
+
+typedef struct RasterizerStateDesc RasterizerStateDesc;
+struct RasterizerStateDesc {
+    CullMode mCullMode;
+    FillMode mFillMode;
+};
+
+typedef enum CompareMode {
+    COMPARE_MODE_NEVER,
+    COMPARE_MODE_LESS,
+    COMPARE_MODE_EQUAL,
+    COMPARE_MODE_LESS_EQUAL,
+    COMPARE_MODE_GREATER,
+    COMPARE_MODE_NOT_EQUAL,
+    COMPARE_MODE_GREATER_EQUAL,
+    COMPARE_MODE_ALWAYS,
+} CompareMode;
+
+typedef struct DepthStateDesc DepthStateDesc;
+struct DepthStateDesc {
+    bool mDepthTest;
+    bool mDepthWrite;
+    CompareMode mDepthFunc;
+};
+
+typedef enum PrimitiveTopology {
+    PRIMITIVE_TOPO_TRI_LIST,
+} PrimitiveTopology;
+
+typedef struct GraphicsPipelineDesc GraphicsPipelineDesc;
+struct GraphicsPipelineDesc {
+    PipelineLayout* pPipelineLayout;
+
+    Shader* pShaderProgram;
+
+    VertexLayout* pVertexLayout;
+
+    RasterizerStateDesc* pRasterizerState;
+    DepthStateDesc* pDepthState;
+
+    PrimitiveTopology mPrimitiveTopo;
+    uint32_t mRenderTargetCount;
+    ImageFormat* pColorFormats;
+    ImageFormat mDepthStencilFormat;
+    SampleCount mSampleCount;
+};
+
+typedef struct BufferLoadDesc BufferLoadDesc;
+struct BufferLoadDesc {
+    Buffer** ppBuffer;
+    const void* pData;
+    BufferDesc mDesc;
+};
+
+///////////////////////////////////////////////
+/// Descriptor Set
+typedef struct Descriptor {
+    DescriptorType mType;
+    uint32_t mCount;
+    uint32_t mOffset;
+} Descriptor;
+
+typedef struct DescriptorDataRange {
+    uint32_t mOffset;
+    uint32_t mSize;
+
+    uint32_t mStructStride;
+} DescriptorDataRange;
+
+typedef struct DescriptorData {
+    uint32_t mCount : 31;
+    uint32_t mBindStencilResource : 1;
+    uint32_t mArrayOffset : 20;
+    uint32_t mIndex : 12;
+    DescriptorDataRange* pRanges;
+    union {
+        struct {
+            uint16_t mUAVMipSlice;
+            bool mBindMipChain;
+        };
+    };
+    union {
+        Texture** ppTextures;
+        /// TODO add sampler Array of sampler descriptors
+        Buffer** ppBuffers;
+    };
+} DescriptorData;
+
+typedef struct DescriptorSetDesc {
+    PipelineLayout* pPipelineLayout;
+    uint32_t rootParameterIndex;
+    uint32_t mIndex;
+    uint32_t mMaxSets;
+    uint32_t mNodeIndex;
+    uint32_t mDescriptorCount;
+    const Descriptor* pDescriptors;
+} DescriptorSetDesc;
+
+#define ALIGN_DescriptorSet 64
+ALIGNED_STRUCT(DescriptorSet, ALIGN_DescriptorSet) {
+#if defined(D3D12)
+    struct {
+        DxDescriptorID mCbvSrvUavHandle;
+        const struct Descriptor* pDescriptors;
+        uint32_t mPipelineType;
+
+        uint32_t mDescriptorCount;
+        uint32_t mDescriptorStride;
+    } mDx;
+#endif
 };
 
 // --------------------------------------------------------------
 // API Function Declarations
 // --------------------------------------------------------------
+
+VT_API void addResource(Renderer* pRenderer, BufferLoadDesc* pBufferDesc);
 
 VT_API void initRenderer(const char* name, RendererDesc* pDesc, Renderer** ppRenderer);
 VT_API void initRendererContext(const char* appName,
@@ -434,6 +695,11 @@ VT_API void initSwapChain(Renderer* pRenderer, SwapChainDesc* pDesc, SwapChain**
 VT_API void exitSwapChain(Renderer* pRenderer, SwapChain* pSwapChain);
 VT_API void
 acquireNextImage(Renderer* pRenderer, SwapChain* pSwapChain, Fence* pFence, uint32_t* pImageIndex);
+
+// Pipeline
+VT_API void
+addPipeline(Renderer* pRenderer, const GraphicsPipelineDesc* pDesc, Pipeline** ppPipeline);
+VT_API void removeGraphicsPipeline(Renderer* pRenderer, Pipeline* pPipeline);
 
 // Cmd
 VT_API void initCmdPool(Renderer* pRenderer, CmdPoolDesc* pDesc, CmdPool** ppCmdPool);
@@ -459,6 +725,7 @@ VT_API void cmdSetViewport(Cmd* pCmd,
                            float height,
                            float minDepth,
                            float maxDepth);
+VT_API void cmdSetScissor(Cmd* pCmd, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 
 VT_API void cmdResourceBarrier(Cmd* pCmd,
                                uint32_t numBufferBarriers,
@@ -467,6 +734,41 @@ VT_API void cmdResourceBarrier(Cmd* pCmd,
                                TextureBarrier* pTextureBarrier,
                                uint32_t numRtBarriers,
                                RenderTargetBarrier* pRtBarriers);
+
+VT_API void cmdSetPipelineLayout(Cmd* pCmd, PipelineLayout* pPipelineLayout);
+VT_API void cmdBindPipeline(Cmd* pCmd, Pipeline* pPipeline);
+VT_API
+void cmdBindVertexBuffer(Cmd* pCmd, uint32_t bufferCount, Buffer** ppVertexBuffers);
+
+VT_API void cmdDraw(Cmd* pCmd, uint32_t vertexCount, uint32_t firstVertex);
+// Pipeline layout
+
+VT_API void initPipelineLayout(Renderer* pRenderer,
+                               const PipelineLayoutDesc* pDesc,
+                               PipelineLayout** ppPipelineLayout);
+VT_API void exitPipelineLayout(Renderer* pRenderer, PipelineLayout* pPipelineLayout);
+
+// Shader
+VT_API void addShader(Renderer* pRenderer, const char* pFileName, Shader** ppShader);
+
+// Render target
+VT_API void
+addRenderTarget(Renderer* pRenderer, const RenderTargetDesc* pDesc, RenderTarget** ppRenderTarget);
+
+// Resources
+VT_API void beginUpdateResource(Renderer* pRenderer, BufferUpdateDesc* pDesc);
+VT_API void endUpdateResource(Renderer* pRenderer, BufferUpdateDesc* pDesc);
+
+// Descripotor sets
+VT_API void
+addDescriptorSet(Renderer* pRenderer, const DescriptorSetDesc* pDesc, DescriptorSet** ppSet);
+VT_API void removeDescriptorSet(Renderer* pRenderer, DescriptorSet* pSet);
+VT_API void updateDescriptorSet(Renderer* pRenderer,
+                                uint32_t setIndex,
+                                DescriptorSet* pSet,
+                                uint32_t dataCount,
+                                const DescriptorData* pData);
+VT_API void cmdBindDescriptorSet(Cmd* pCmd, DescriptorSet* pSet, uint32_t setIndex);
 
 #ifdef __cplusplus
 }
