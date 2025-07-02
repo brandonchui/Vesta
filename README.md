@@ -1,40 +1,73 @@
+
+
+# Vesta
+
+## Install
+
 ```bash
 git clone --recurse-submodules git@github.com:brandonchui/Vesta.git
 
 # git clone --recurse-submodules
 ```
+## Platforms
+- Windows
+
+
+
+## Examples
+
+### 00_Init
 
 ```bash
 ./run.bat 00_Init
 ```
 
-```bash
-./run.bat 01_Triangle    
-```
-- `f` to switch solid/wireframe
-- `space` to switch shapes
+
+
+### 01_Triangle
 
 ```bash
-./run.bat 02_ConstantBuffer    
+./run.bat 01_Triangle
 ```
-- `f` to switch solid/wireframe
-- `space` to switch shapes
+- `f`       Toggle solid/wireframe  
+- `space`   Switch shapes  
+
+
+
+### 02_ConstantBuffer
+
+```bash
+./run.bat 02_ConstantBuffer
+```
+- `f`       Toggle solid/wireframe  
+- `space`   Switch shapes  
+
+
+
+### 03_MovableObjects
 
 ```bash
 ./run.bat 03_MovableObjects
 ```
-- WASD to move triangle
-- `f` to switch solid/wireframe
-- `space` to switch shapes
+- `WASD`    Move triangle  
+- `f`       Toggle solid/wireframe  
+- `space`   Switch shapes  
 
+
+
+### 04_Camera
 
 ```bash
 ./run.bat 04_Camera
 ```
-- `f` to switch solid/wireframe
-- Mouse drag to orbit camera
+- `f`           Toggle solid/wireframe  
+- Mouse drag    Orbit camera  
+
+
+
+### 05_MultiObjects
 
 ```bash
-./run.bat 05_MultiObjects    
+./run.bat 05_MultiObjects
 ```
-- `f` to switch solid/wireframe
+- `f`       Toggle solid/wireframe  
