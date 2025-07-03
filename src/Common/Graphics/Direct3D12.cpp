@@ -614,6 +614,7 @@ void addDescriptorSet(Renderer* pRenderer, const DescriptorSetDesc* pDesc, Descr
     pSet->mDx.pDescriptors = pDesc->pDescriptors;
     pSet->mDx.mCbvSrvUavHandle = sCurrentDescriptorOffset;
     pSet->mDx.mPipelineType = 0;
+    pSet->mDx.mRootParamterIndex = pDesc->mIndex;
 
     pSet->mDx.mDescriptorCount = pDesc->mDescriptorCount;
     pSet->mDx.mDescriptorStride = descriptorCount;
@@ -669,7 +670,7 @@ void updateDescriptorSet(Renderer* pRenderer,
 void cmdBindDescriptorSet(Cmd* pCmd, DescriptorSet* pSet, uint32_t setIndex) {
     assert(pCmd && pSet);
 
-    const uint32_t rootParameterIndex = 0;
+    const uint32_t rootParameterIndex = pSet->mDx.mRootParamterIndex;
     DescriptorHeap* pHeap = pCmd->pRenderer->mDx.pCbvSrvUavHeaps[0];
 
     uint32_t descriptorCountPerSet = pSet->mDx.mDescriptorStride;

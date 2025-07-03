@@ -664,6 +664,7 @@ ALIGNED_STRUCT(DescriptorSet, ALIGN_DescriptorSet) {
 
         uint32_t mDescriptorCount;
         uint32_t mDescriptorStride;
+        uint32_t mRootParamterIndex;
     } mDx;
 #endif
 };
