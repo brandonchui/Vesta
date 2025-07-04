@@ -23,6 +23,7 @@ add_library(Engine SHARED
     "src/Common/Util/Logger.h"
     "src/Common/Resource/Resource.cpp"
     "src/VTMath.cpp"
+    "src/Common/RingBuffer.hpp"
     "${THIRDPARTY_DIR}/D3D12MemoryAllocator/src/D3D12MemAlloc.cpp"
 )
 
