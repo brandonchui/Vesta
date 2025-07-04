@@ -3,16 +3,19 @@
 
 #include "Common/IApp.h"
 #include "Common/IGraphics.h"
+#include "Common/RingBuffer.hpp"
 #include "Common/Util/Logger.h"
 
 // Global
+const uint32_t gFrameCount = 2;
+uint32_t gFrameIndex = 0;
+
 Renderer* pRenderer = NULL;
 Queue* pQueue = NULL;
-
 SwapChain* pSwapChain = NULL;
-Fence* pFence = NULL;
-CmdPool* pCmdPool = NULL;
-Cmd* pCmd = NULL;
+
+// Handles fence, cmd pool, and cmd list
+GpuCmdRing gCmdRing = {};
 
 ClearValue color { 0.2f, 0.2f, 0.2f, 1.0f };
 
@@ -37,17 +40,11 @@ class Example : public IApp {
             return false;
         }
 
-        initFence(pRenderer, &pFence);
-        if (!pFence) {
-            VT_ERROR("Failed to initialize fence.");
-            return false;
-        }
-
-        CmdPoolDesc cmdPoolDesc = { pQueue };
-        initCmdPool(pRenderer, &cmdPoolDesc, &pCmdPool);
-
-        CmdDesc cmdDesc = { pCmdPool };
-        initCmd(pRenderer, &cmdDesc, &pCmd);
+        GpuCmdRingDesc cmdRingDesc = {};
+        cmdRingDesc.pQueue = pQueue;
+        cmdRingDesc.mPoolCount = gFrameCount;
+        cmdRingDesc.mCmdPerPoolCount = 1;
+        initGpuCmdRing(pRenderer, &cmdRingDesc, &gCmdRing);
 
         if (!pInput) {
             return false;
@@ -59,11 +56,9 @@ class Example : public IApp {
     }
 
     void ShutDown() override {
-        waitQueueIdle(pQueue, pFence);
+        waitQueueIdle(pQueue, gCmdRing.pFences[0][0]);
+        exitGpuCmdRing(pRenderer, &gCmdRing);
 
-        exitCmd(pRenderer, pCmd);
-        exitCmdPool(pRenderer, pCmdPool);
-        exitFence(pRenderer, pFence);
         exitSwapChain(pRenderer, pSwapChain);
         exitQueue(pRenderer, pQueue);
         shutdownRenderer(pRenderer);
@@ -93,13 +88,17 @@ class Example : public IApp {
             }
         }
 
-        uint32_t mFrameIndex = 0; // Used for ring buffer later
+        // Grab pool,cmd,fence for this frame
+        GpuCmdRingElement elem = getNextGpuCmdRingElement(&gCmdRing, true, 1);
+        Cmd* pCmd = elem.pCmds[0];
 
-        acquireNextImage(pRenderer, pSwapChain, pFence, &mFrameIndex);
-        RenderTarget* pRenderTarget = pSwapChain->ppRenderTargets[mFrameIndex];
+        waitFence(pRenderer, elem.pFence);
 
-        resetCmdPool(pRenderer, pCmdPool);
+        uint32_t swapChainImageIndex;
+        acquireNextImage(pRenderer, pSwapChain, NULL, &swapChainImageIndex);
+        RenderTarget* pRenderTarget = pSwapChain->ppRenderTargets[swapChainImageIndex];
 
+        resetCmdPool(pRenderer, elem.pCmdPool);
         beginCmd(pCmd);
 
         // Transition Present -> Render Target
@@ -135,16 +134,15 @@ class Example : public IApp {
         QueueSubmitDesc submitDesc = {};
         submitDesc.mCmdCount = 1;
         submitDesc.ppCmd = &pCmd;
-        submitDesc.pSignalFence = pFence;
+        submitDesc.pSignalFence = elem.pFence;
         queueSubmit(pQueue, &submitDesc);
 
         QueuePresentDesc presentDesc = {};
         presentDesc.pSwapChain = pSwapChain;
-        presentDesc.mIndex = mFrameIndex;
+        presentDesc.mIndex = swapChainImageIndex;
         queuePresent(pQueue, &presentDesc);
 
-        // Wait for the frame to finish
-        waitFence(pRenderer, pFence);
+        gFrameIndex = (gFrameIndex + 1) % gFrameCount;
     }
 
     const char* GetName() override { return mSettings.pTitle; }
@@ -153,7 +151,7 @@ class Example : public IApp {
         if (!pWindow)
             return false;
 
-        waitQueueIdle(pQueue, pFence);
+        waitQueueIdle(pQueue, gCmdRing.pFences[0][0]);
 
         SwapChainDesc swapChainDesc = {};
         swapChainDesc.mWindowHandle = pWindow->handle;

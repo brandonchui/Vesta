@@ -1,9 +1,9 @@
 #include "Common/IApp.h"
 #include "Common/IGraphics.h"
+#include "Common/RingBuffer.hpp"
 #include "Common/Util/Logger.h"
 #include "VTMath.h"
 
-// BUG 2 objects rendered instead of 3
 const uint32_t gObjectCount = 3;
 
 inline uint64_t AlignUp(uint64_t value, uint64_t alignment) {
@@ -16,13 +16,13 @@ struct ObjectConstants {
 };
 
 const uint32_t gFrameCount = 2;
-Buffer* pConstantBuffer[gObjectCount][gFrameCount] = { { nullptr } };
+uint32_t gFrameIndex = 0;
 
+Buffer* pConstantBuffer[gObjectCount][gFrameCount] = { { nullptr } };
 DescriptorSet* pDescriptorSet[gObjectCount] = { nullptr };
 
 Descriptor gUniformDescriptorLayout[] = { { DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, 0 } };
 ObjectConstants gObjectConstants[gObjectCount];
-uint32_t gFrameIndex = 0;
 
 Matrix4x4 gViewMatrix;
 Matrix4x4 gProjectionMatrix;
@@ -31,13 +31,14 @@ bool isWireframe = false;
 Renderer* pRenderer = NULL;
 Queue* pQueue = NULL;
 SwapChain* pSwapChain = NULL;
-Fence* pFrameFences[gFrameCount] = { nullptr };
-CmdPool* pCmdPools[gFrameCount] = { nullptr };
-Cmd* pCmds[gFrameCount] = { nullptr };
+
 PipelineLayout* pTrianglePipelineLayout = NULL;
 Pipeline* pTrianglePipeline = NULL;
 Pipeline* pWireframePipeline = NULL;
 Buffer* pTriangleVertexBuffer = NULL;
+
+// Declare the GpuCmdRing
+GpuCmdRing gCmdRing = {};
 
 struct VertexPosColor {
     Vector3 pos;
@@ -100,25 +101,13 @@ class Example : public IApp {
         if (!pQueue)
             return false;
 
-        for (uint32_t i = 0; i < gFrameCount; ++i) {
-            initFence(pRenderer, &pFrameFences[i]);
-            CmdPoolDesc cmdPoolDesc = { pQueue };
-            initCmdPool(pRenderer, &cmdPoolDesc, &pCmdPools[i]);
-            CmdDesc cmdDesc = { pCmdPools[i] };
-            initCmd(pRenderer, &cmdDesc, &pCmds[i]);
-        }
+        GpuCmdRingDesc cmdRingDesc = {};
+        cmdRingDesc.pQueue = pQueue;
+        cmdRingDesc.mPoolCount = gFrameCount;
+        cmdRingDesc.mCmdPerPoolCount = 1;
+        initGpuCmdRing(pRenderer, &cmdRingDesc, &gCmdRing);
 
         PipelineLayoutDesc pipelineLayoutDesc = {};
-        /*
-        DescriptorRangeDesc range = { 0, 1, DESCRIPTOR_TYPE_UNIFORM_BUFFER };
-        RootParameter rootParam = {};
-        rootParam.type = RESOURCE_TYPE_DESCRIPTOR_TABLE;
-        rootParam.shaderVisibility = SHADER_STAGE_VERTEX;
-        rootParam.descriptorTable.rangeCount = 1;
-        rootParam.descriptorTable.pRanges = &range;
-        pipelineLayoutDesc.parameterCount = 1;
-        pipelineLayoutDesc.pParameters = &rootParam;
-        */
         pipelineLayoutDesc.pShaderFileName = "Shaders/SimpleMovable.hlsl";
         initPipelineLayout(pRenderer, &pipelineLayoutDesc, &pTrianglePipelineLayout);
 
@@ -126,7 +115,7 @@ class Example : public IApp {
 
         BufferLoadDesc vbLoadDesc = {};
         vbLoadDesc.mDesc.mDescriptors = DESCRIPTOR_TYPE_VERTEX_BUFFER;
-        vbLoadDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_CPU_TO_GPU;
+        vbLoadDesc.mDesc.mMemoryUsage = RESOURCE_MEMORY_USAGE_GPU_ONLY;
         vbLoadDesc.mDesc.mSize = sizeof(gTriangleVertices);
         vbLoadDesc.mDesc.mStructStride = sizeof(VertexPosColor);
         vbLoadDesc.pData = gTriangleVertices;
@@ -171,7 +160,10 @@ class Example : public IApp {
     }
 
     void ShutDown() override {
-        waitQueueIdle(pQueue, pFrameFences[0]);
+        // Correctly call waitQueueIdle with a valid fence from the command ring
+        waitQueueIdle(pQueue, gCmdRing.pFences[0][0]);
+
+        exitGpuCmdRing(pRenderer, &gCmdRing);
 
         for (uint32_t i = 0; i < gObjectCount; ++i) {
             removeDescriptorSet(pRenderer, pDescriptorSet[i]);
@@ -215,13 +207,12 @@ class Example : public IApp {
         acquireNextImage(pRenderer, pSwapChain, NULL, &swapChainImageIndex);
         RenderTarget* pRenderTarget = pSwapChain->ppRenderTargets[swapChainImageIndex];
 
-        CmdPool* pCurrentCmdPool = pCmdPools[gFrameIndex];
-        Cmd* pCurrentCmd = pCmds[gFrameIndex];
-        Fence* pCurrentFence = pFrameFences[gFrameIndex];
+        GpuCmdRingElement elem = getNextGpuCmdRingElement(&gCmdRing, true, 1);
+        Cmd* pCurrentCmd = elem.pCmds[0];
 
-        waitFence(pRenderer, pCurrentFence);
+        waitFence(pRenderer, elem.pFence);
 
-        resetCmdPool(pRenderer, pCurrentCmdPool);
+        resetCmdPool(pRenderer, elem.pCmdPool);
         beginCmd(pCurrentCmd);
 
         RenderTargetBarrier rtBarrier = { pRenderTarget,
@@ -260,9 +251,7 @@ class Example : public IApp {
             data.mCount = 1;
             data.ppBuffers = &pConstantBuffer[i][gFrameIndex];
             updateDescriptorSet(pRenderer, gFrameIndex, pDescriptorSet[i], 1, &data);
-
             cmdBindDescriptorSet(pCurrentCmd, pDescriptorSet[i], gFrameIndex);
-
             cmdDraw(pCurrentCmd, 3, 0);
         }
 
@@ -271,7 +260,7 @@ class Example : public IApp {
 
         endCmd(pCurrentCmd);
 
-        QueueSubmitDesc submitDesc = { &pCurrentCmd, pCurrentFence, 1, false };
+        QueueSubmitDesc submitDesc = { &pCurrentCmd, elem.pFence, 1, false };
         queueSubmit(pQueue, &submitDesc);
 
         QueuePresentDesc presentDesc = { pSwapChain, swapChainImageIndex, false };
@@ -286,7 +275,9 @@ class Example : public IApp {
         if (!pWindow)
             return false;
 
-        waitQueueIdle(pQueue, pFrameFences[gFrameIndex]);
+        // Correctly call waitQueueIdle with a valid fence from the command ring
+        waitQueueIdle(pQueue, gCmdRing.pFences[0][0]);
+
         SwapChainDesc swapChainDesc = {};
         swapChainDesc.mWindowHandle = pWindow->handle;
         swapChainDesc.mWidth = pWindow->width;

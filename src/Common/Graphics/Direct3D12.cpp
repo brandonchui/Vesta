@@ -220,6 +220,11 @@ void addResource(Renderer* pRenderer, BufferLoadDesc* pBufferDesc) {
         initialState = D3D12_RESOURCE_STATE_GENERIC_READ;
     }
 
+    if (pBufferDesc->pData != nullptr && pBuffer->mMemoryUsage == RESOURCE_MEMORY_USAGE_GPU_ONLY) {
+        heapType = D3D12_HEAP_TYPE_UPLOAD;
+        initialState = D3D12_RESOURCE_STATE_GENERIC_READ;
+    }
+
     D3D12MA::ALLOCATION_DESC allocationDesc = {};
     allocationDesc.HeapType = heapType;
 
