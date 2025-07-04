@@ -188,7 +188,7 @@ class Example : public IApp {
         Matrix4x4 vp = gViewMatrix * gProjectionMatrix;
         vp.Transpose();
 
-        for (uint32_t i = 0; i < gObjectCount; ++i) {
+        for (int32_t i = 0; i < gObjectCount; ++i) {
             float x_offset = (float) (i - 1) * 2.0f;
             Matrix4x4 translation = Matrix4x4::CreateTranslation(x_offset, 0.0f, 0.0f);
 
